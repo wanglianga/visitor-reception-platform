@@ -12,6 +12,9 @@ export class AccessPermission {
   @Column()
   visitorName: string;
 
+  @Column({ default: 0 })
+  accompanyCount: number;
+
   @Column()
   allowedFloors: string;
 

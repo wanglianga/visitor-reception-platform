@@ -74,6 +74,7 @@ export interface AccessPermission {
   id: number;
   visitorId: number;
   visitorName: string;
+  accompanyCount: number;
   allowedFloors: string;
   gateEnabled: boolean;
   validFrom: string;
@@ -85,6 +86,7 @@ export interface AccessPermission {
 export interface CreateAccessPermissionParams {
   visitorId: number;
   visitorName: string;
+  accompanyCount?: number;
   allowedFloors: string;
   gateEnabled?: boolean;
   validFrom: string;

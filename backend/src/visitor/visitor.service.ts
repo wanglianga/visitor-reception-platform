@@ -76,6 +76,7 @@ export class VisitorService {
     await this.permissionRepo.save({
       visitorId: saved.id,
       visitorName: saved.name,
+      accompanyCount: saved.accompanyCount,
       allowedFloors: '1',
       gateEnabled: true,
       validFrom: now,

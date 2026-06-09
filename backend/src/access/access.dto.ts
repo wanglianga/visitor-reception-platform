@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional, IsNumber, IsBoolean, IsDateString, IsEnum } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsNumber, IsBoolean, IsDateString, IsEnum, Min } from 'class-validator';
 import { AccessDirection, AccessMethod, AccessPermissionStatus } from '../common/enums';
 
 export class CreateAccessPermissionDto {
@@ -8,6 +8,11 @@ export class CreateAccessPermissionDto {
   @IsString()
   @IsNotEmpty()
   visitorName: string;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  accompanyCount?: number;
 
   @IsString()
   @IsNotEmpty()

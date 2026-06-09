@@ -126,6 +126,7 @@ function SecurityPage() {
     const params: CreateAccessPermissionParams = {
       visitorId: values.visitorId,
       visitorName: selectedVisitor?.name || '',
+      accompanyCount: selectedVisitor?.accompanyCount || 0,
       allowedFloors: values.allowedFloors.join(','),
       validFrom: values.validTime[0].toISOString(),
       validUntil: values.validTime[1].toISOString(),
@@ -160,6 +161,12 @@ function SecurityPage() {
 
   const permissionColumns = [
     { title: '访客姓名', dataIndex: 'visitorName', key: 'visitorName' },
+    {
+      title: '随行人数',
+      dataIndex: 'accompanyCount',
+      key: 'accompanyCount',
+      render: (val: number) => val > 0 ? <Tag color="orange">{val} 人</Tag> : <Tag>无</Tag>,
+    },
     {
       title: '允许楼层',
       dataIndex: 'allowedFloors',
@@ -323,7 +330,7 @@ function SecurityPage() {
             <Select
               placeholder="请选择访客"
               options={visitors.map((v) => ({
-                label: `${v.name} - ${v.company || ''}`,
+                label: `${v.name} - ${v.company || ''}${v.accompanyCount > 0 ? ` (随行${v.accompanyCount}人)` : ''}`,
                 value: v.id,
               }))}
             />
@@ -351,7 +358,7 @@ function SecurityPage() {
             <Select
               placeholder="请选择访客"
               options={visitors.map((v) => ({
-                label: `${v.name} - ${v.company || ''}`,
+                label: `${v.name} - ${v.company || ''}${v.accompanyCount > 0 ? ` (随行${v.accompanyCount}人)` : ''}`,
                 value: v.id,
               }))}
             />

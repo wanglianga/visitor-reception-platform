@@ -194,7 +194,12 @@ function FrontDeskPage() {
       key: 'idNumber',
       render: (val: string) => val ? `${val.substring(0, 4)}****${val.substring(val.length - 4)}` : '-',
     },
-    { title: '随行人数', dataIndex: 'accompanyCount', key: 'accompanyCount' },
+    {
+      title: '随行人数',
+      dataIndex: 'accompanyCount',
+      key: 'accompanyCount',
+      render: (val: number) => val > 0 ? <Tag color="orange">{val} 人</Tag> : '-',
+    },
     {
       title: '状态',
       dataIndex: 'status',
