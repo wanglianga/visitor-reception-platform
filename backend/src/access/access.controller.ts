@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Patch, Body, Param, Query, ParseIntPipe } from '@nestjs/common';
 import { AccessService } from './access.service';
-import { CreateAccessPermissionDto, UpdateAccessPermissionDto, CreateAccessRecordDto } from './access.dto';
+import { CreateAccessPermissionDto, UpdateAccessPermissionDto, CreateAccessRecordDto, HandleOverstayDto } from './access.dto';
 import { AccessPermissionStatus } from '../common/enums';
 
 @Controller('access')
@@ -32,8 +32,23 @@ export class AccessController {
     return this.accessService.findAllRecords();
   }
 
+  @Get('overstay/records')
+  getOverstayRecords() {
+    return this.accessService.findAllOverstayRecords();
+  }
+
+  @Get('overstay/detail/:visitorId')
+  getOverstayDetail(@Param('visitorId', ParseIntPipe) visitorId: number) {
+    return this.accessService.getOverstayDetail(visitorId);
+  }
+
   @Get('overstay')
   getOverstayed() {
     return this.accessService.getOverstayed();
+  }
+
+  @Post('overstay/handle/:visitorId')
+  handleOverstay(@Param('visitorId', ParseIntPipe) visitorId: number, @Body() dto: HandleOverstayDto) {
+    return this.accessService.handleOverstay(visitorId, dto);
   }
 }

@@ -1,5 +1,5 @@
 import { IsString, IsNotEmpty, IsOptional, IsNumber, IsBoolean, IsDateString, IsEnum, Min } from 'class-validator';
-import { AccessDirection, AccessMethod, AccessPermissionStatus } from '../common/enums';
+import { AccessDirection, AccessMethod, AccessPermissionStatus, OverstayResult } from '../common/enums';
 
 export class CreateAccessPermissionDto {
   @IsNumber()
@@ -76,4 +76,17 @@ export class CreateAccessRecordDto {
   @IsDateString()
   @IsOptional()
   timestamp?: string;
+}
+
+export class HandleOverstayDto {
+  @IsEnum(OverstayResult)
+  result: OverstayResult;
+
+  @IsString()
+  @IsOptional()
+  note?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  handledBy: string;
 }

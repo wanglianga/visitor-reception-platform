@@ -15,6 +15,7 @@ const typeConfig: Record<string, { color: string; label: string }> = {
   timeout: { color: 'default', label: '超时' },
   meeting_conflict: { color: 'red', label: '预约冲突' },
   overstay: { color: 'orange', label: '超时滞留' },
+  companion_pending: { color: 'cyan', label: '随行待确认' },
 };
 
 const severityConfig: Record<string, { color: 'blue' | 'green' | 'orange' | 'red'; label: string }> = {

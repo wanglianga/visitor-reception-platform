@@ -4,10 +4,11 @@ import { Repository, LessThan } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { AccessPermission } from './access-permission.entity';
 import { AccessRecord } from './access-record.entity';
+import { OverstayRecord } from './overstay-record.entity';
 import { Visitor } from '../visitor/visitor.entity';
 import { Alert } from '../alert/alert.entity';
-import { CreateAccessPermissionDto, UpdateAccessPermissionDto, CreateAccessRecordDto } from './access.dto';
-import { AccessPermissionStatus, VisitorStatus, AccessDirection, AlertType, AlertSeverity } from '../common/enums';
+import { CreateAccessPermissionDto, UpdateAccessPermissionDto, CreateAccessRecordDto, HandleOverstayDto } from './access.dto';
+import { AccessPermissionStatus, VisitorStatus, AccessDirection, AlertType, AlertSeverity, OverstayResult } from '../common/enums';
 
 @Injectable()
 export class AccessService {
@@ -18,6 +19,8 @@ export class AccessService {
     private permissionRepo: Repository<AccessPermission>,
     @InjectRepository(AccessRecord)
     private recordRepo: Repository<AccessRecord>,
+    @InjectRepository(OverstayRecord)
+    private overstayRecordRepo: Repository<OverstayRecord>,
     @InjectRepository(Visitor)
     private visitorRepo: Repository<Visitor>,
     @InjectRepository(Alert)
@@ -122,5 +125,87 @@ export class AccessService {
     return this.visitorRepo.find({
       where: visitorIds.map((id) => ({ id, status: VisitorStatus.IN_BUILDING })),
     });
+  }
+
+  async getOverstayDetail(visitorId: number): Promise<any> {
+    const visitor = await this.visitorRepo.findOne({ where: { id: visitorId } });
+    if (!visitor) throw new NotFoundException(`Visitor #${visitorId} not found`);
+
+    const lastRecord = await this.recordRepo.findOne({
+      where: { visitorId },
+      order: { timestamp: 'DESC' },
+    });
+
+    const permission = await this.permissionRepo.findOne({
+      where: { visitorId, status: AccessPermissionStatus.ACTIVE },
+    });
+
+    return {
+      visitor,
+      lastAccessPoint: lastRecord
+        ? { floor: lastRecord.floor, gate: lastRecord.gate, time: lastRecord.timestamp, direction: lastRecord.direction }
+        : null,
+      permission: permission || null,
+    };
+  }
+
+  async handleOverstay(visitorId: number, dto: HandleOverstayDto): Promise<OverstayRecord> {
+    const visitor = await this.visitorRepo.findOne({ where: { id: visitorId } });
+    if (!visitor) throw new NotFoundException(`Visitor #${visitorId} not found`);
+
+    const lastRecord = await this.recordRepo.findOne({
+      where: { visitorId },
+      order: { timestamp: 'DESC' },
+    });
+
+    const overstayRecord = this.overstayRecordRepo.create({
+      visitorId,
+      visitorName: visitor.name,
+      lastFloor: lastRecord?.floor || null,
+      lastGate: lastRecord?.gate || null,
+      lastAccessTime: lastRecord?.timestamp || null,
+      result: dto.result,
+      note: dto.note || null,
+      handledBy: dto.handledBy,
+      handledAt: new Date(),
+      handled: true,
+    });
+
+    const saved = await this.overstayRecordRepo.save(overstayRecord);
+
+    if (dto.result === OverstayResult.FORGOT_BADGE || dto.result === OverstayResult.ABNORMAL) {
+      await this.visitorRepo.update({ id: visitorId }, { status: VisitorStatus.LEFT });
+      await this.permissionRepo.update(
+        { visitorId, status: AccessPermissionStatus.ACTIVE },
+        { status: AccessPermissionStatus.REVOKED },
+      );
+    }
+
+    if (dto.result === OverstayResult.NORMAL_DELAY) {
+      const permission = await this.permissionRepo.findOne({
+        where: { visitorId, status: AccessPermissionStatus.ACTIVE },
+      });
+      if (permission) {
+        const extendedUntil = new Date(Date.now() + 2 * 60 * 60 * 1000);
+        permission.validUntil = extendedUntil;
+        await this.permissionRepo.save(permission);
+      }
+    }
+
+    const overstayAlerts = await this.alertRepo.find({
+      where: { visitorId, type: AlertType.OVERSTAY, handled: false },
+    });
+    for (const alert of overstayAlerts) {
+      alert.handled = true;
+      alert.handledBy = dto.handledBy;
+      alert.handledAt = new Date();
+      await this.alertRepo.save(alert);
+    }
+
+    return saved;
+  }
+
+  async findAllOverstayRecords(): Promise<OverstayRecord[]> {
+    return this.overstayRecordRepo.find({ order: { createdAt: 'DESC' } });
   }
 }

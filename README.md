@@ -165,6 +165,19 @@ npm run dev
 | POST | /access/records | 记录通行事件 |
 | GET | /access/records | 查询通行记录 |
 | GET | /access/overstay | 查询超时滞留访客 |
+| GET | /access/overstay/records | 查询滞留处置记录 |
+| GET | /access/overstay/detail/:visitorId | 查询滞留访客详情（含最后通行位置） |
+| POST | /access/overstay/handle/:visitorId | 处置滞留访客 |
+
+### 随行人员管理
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | /companions | 登记临时随行人员 |
+| GET | /companions | 查询随行人员列表 |
+| GET | /companions/visitor/:visitorId | 查询指定访客的随行人员 |
+| PATCH | /companions/:id/confirm | 被访员工确认随行人员 |
+| PATCH | /companions/:id/reject | 被访员工拒绝随行人员 |
 
 ### 会议室管理
 

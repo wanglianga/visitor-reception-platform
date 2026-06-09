@@ -73,6 +73,7 @@ export interface RegisterVisitorParams {
 export interface AccessPermission {
   id: number;
   visitorId: number;
+  companionId: number | null;
   visitorName: string;
   accompanyCount: number;
   allowedFloors: string;
@@ -164,7 +165,7 @@ export interface ExtendBookingParams {
 
 export interface Alert {
   id: number;
-  type: 'id_mismatch' | 'temporary_visitor' | 'timeout' | 'meeting_conflict' | 'overstay';
+  type: 'id_mismatch' | 'temporary_visitor' | 'timeout' | 'meeting_conflict' | 'overstay' | 'companion_pending';
   severity: 'low' | 'medium' | 'high';
   visitorId: number | null;
   visitorName: string | null;
@@ -173,4 +174,60 @@ export interface Alert {
   handledBy: string | null;
   handledAt: string | null;
   createdAt: string;
+}
+
+export interface Companion {
+  id: number;
+  name: string;
+  idType: 'id_card' | 'passport' | 'driver_license' | 'other';
+  idNumber: string | null;
+  relationship: string;
+  allowedFloors: string;
+  visitorId: number;
+  status: 'pending_confirmation' | 'confirmed' | 'rejected';
+  confirmedBy: string | null;
+  confirmedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RegisterCompanionParams {
+  name: string;
+  idType?: string;
+  idNumber?: string;
+  relationship: string;
+  allowedFloors?: string;
+  visitorId: number;
+}
+
+export interface OverstayRecord {
+  id: number;
+  visitorId: number;
+  visitorName: string;
+  lastFloor: string | null;
+  lastGate: string | null;
+  lastAccessTime: string | null;
+  result: 'normal_delay' | 'forgot_badge' | 'abnormal' | null;
+  note: string | null;
+  handledBy: string | null;
+  handledAt: string | null;
+  handled: boolean;
+  createdAt: string;
+}
+
+export interface OverstayDetail {
+  visitor: Visitor;
+  lastAccessPoint: {
+    floor: string;
+    gate: string;
+    time: string;
+    direction: 'in' | 'out';
+  } | null;
+  permission: AccessPermission | null;
+}
+
+export interface HandleOverstayParams {
+  result: 'normal_delay' | 'forgot_badge' | 'abnormal';
+  note?: string;
+  handledBy: string;
 }

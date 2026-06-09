@@ -6,6 +6,7 @@ import { VisitorModule } from './visitor/visitor.module';
 import { AccessModule } from './access/access.module';
 import { MeetingModule } from './meeting/meeting.module';
 import { AlertModule } from './alert/alert.module';
+import { CompanionModule } from './companion/companion.module';
 import { SeedModule } from './seed/seed.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 
@@ -23,6 +24,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
     AccessModule,
     MeetingModule,
     AlertModule,
+    CompanionModule,
     SeedModule,
     DashboardModule,
   ],

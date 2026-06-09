@@ -47,6 +47,7 @@ export enum AlertType {
   TIMEOUT = 'timeout',
   MEETING_CONFLICT = 'meeting_conflict',
   OVERSTAY = 'overstay',
+  COMPANION_PENDING = 'companion_pending',
 }
 
 export enum AlertSeverity {
@@ -60,4 +61,16 @@ export enum IdType {
   PASSPORT = 'passport',
   DRIVER_LICENSE = 'driver_license',
   OTHER = 'other',
+}
+
+export enum CompanionStatus {
+  PENDING_CONFIRMATION = 'pending_confirmation',
+  CONFIRMED = 'confirmed',
+  REJECTED = 'rejected',
+}
+
+export enum OverstayResult {
+  NORMAL_DELAY = 'normal_delay',
+  FORGOT_BADGE = 'forgot_badge',
+  ABNORMAL = 'abnormal',
 }

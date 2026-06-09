@@ -9,6 +9,9 @@ export class AccessPermission {
   @Column()
   visitorId: number;
 
+  @Column({ nullable: true })
+  companionId: number;
+
   @Column()
   visitorName: string;
 
