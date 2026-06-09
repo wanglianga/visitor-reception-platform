@@ -27,6 +27,9 @@ export class Visitor {
   @Column({ default: 0 })
   accompanyCount: number;
 
+  @Column({ nullable: true })
+  appointmentId: number;
+
   @Column({ type: 'simple-enum', enum: VisitorStatus, default: VisitorStatus.PENDING })
   status: VisitorStatus;
 

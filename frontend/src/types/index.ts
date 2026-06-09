@@ -53,6 +53,7 @@ export interface Visitor {
   idType: 'id_card' | 'passport' | 'driver_license' | 'other';
   photo: string | null;
   accompanyCount: number;
+  appointmentId: number | null;
   status: 'pending' | 'registered' | 'in_building' | 'left' | 'rejected';
   createdAt: string;
   updatedAt: string;

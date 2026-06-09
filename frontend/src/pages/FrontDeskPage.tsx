@@ -14,8 +14,11 @@ import {
   Upload,
   message,
   Alert,
+  Badge,
+  Descriptions,
+  Modal,
 } from 'antd';
-import { UserAddOutlined, LogoutOutlined, CameraOutlined } from '@ant-design/icons';
+import { UserAddOutlined, LogoutOutlined, CameraOutlined, PrinterOutlined } from '@ant-design/icons';
 import api from '../api/index';
 import type { Appointment, Visitor, RegisterVisitorParams } from '../types/index';
 import dayjs from 'dayjs';
@@ -49,18 +52,25 @@ function FrontDeskPage() {
   const [visitorsLoading, setVisitorsLoading] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [idMismatch, setIdMismatch] = useState(false);
+  const [printBadgeVisible, setPrintBadgeVisible] = useState(false);
+  const [registeredVisitor, setRegisteredVisitor] = useState<Visitor | null>(null);
   const [form] = Form.useForm();
 
   const fetchAppointments = useCallback(async () => {
     setLoading(true);
     try {
-      const res: any = await api.get('/appointments', { params: { status: 'pending' } });
-      setAppointments(Array.isArray(res) ? res : []);
+      const res: any = await api.get('/appointments', { params: { status: 'confirmed' } });
+      const list = Array.isArray(res) ? res : [];
+      const registeredIds = visitors
+        .filter((v) => v.appointmentId)
+        .map((v) => v.appointmentId);
+      const available = list.filter((a) => !registeredIds.includes(a.id));
+      setAppointments(available);
     } catch {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [visitors]);
 
   const fetchVisitors = useCallback(async () => {
     setVisitorsLoading(true);
@@ -74,9 +84,14 @@ function FrontDeskPage() {
   }, []);
 
   useEffect(() => {
-    fetchAppointments();
     fetchVisitors();
-  }, [fetchAppointments, fetchVisitors]);
+  }, [fetchVisitors]);
+
+  useEffect(() => {
+    if (visitors.length > 0 || !visitorsLoading) {
+      fetchAppointments();
+    }
+  }, [visitors, visitorsLoading]);
 
   const handleSelectAppointment = (appointmentId: number) => {
     const apt = appointments.find((a) => a.id === appointmentId);
@@ -93,7 +108,7 @@ function FrontDeskPage() {
 
   const handleRegister = async (values: any) => {
     if (!selectedAppointment) {
-      message.warning('请先选择预约');
+      message.warning('请先选择已确认的预约');
       return;
     }
     const params: RegisterVisitorParams = {
@@ -110,9 +125,12 @@ function FrontDeskPage() {
       const res: any = await api.post('/visitors/register', params);
       if (res?.idMismatch) {
         setIdMismatch(true);
-        return;
+        message.warning('证件信息与预约不匹配，已生成告警');
+      } else {
+        message.success('访客登记成功');
       }
-      message.success('访客登记成功');
+      setRegisteredVisitor(res);
+      setPrintBadgeVisible(true);
       form.resetFields();
       setSelectedAppointment(null);
       setIdMismatch(false);
@@ -123,7 +141,7 @@ function FrontDeskPage() {
   const handleCheckout = async (id: number) => {
     try {
       await api.post(`/visitors/${id}/checkout`);
-      message.success('签离成功');
+      message.success('签离成功，门禁权限已撤销');
       fetchVisitors();
     } catch {}
   };
@@ -146,24 +164,35 @@ function FrontDeskPage() {
       render: (val: string) => val ? dayjs(val).format('YYYY-MM-DD HH:mm') : '-',
     },
     {
-      title: '状态',
-      dataIndex: 'status',
-      key: 'status',
-      render: (status: string) => {
-        const info = appointmentStatusMap[status] || { color: 'default', label: status };
-        return <Tag color={info.color}>{info.label}</Tag>;
-      },
+      title: '需会议室',
+      dataIndex: 'needMeetingRoom',
+      key: 'needMeetingRoom',
+      render: (val: boolean) => val ? <Tag color="blue">是</Tag> : <Tag>否</Tag>,
+    },
+    {
+      title: '被访员工',
+      dataIndex: 'employeeName',
+      key: 'employeeName',
     },
   ];
 
   const visitorColumns = [
     { title: '访客姓名', dataIndex: 'name', key: 'name' },
     { title: '来访公司', dataIndex: 'company', key: 'company' },
-    { title: '证件类型', dataIndex: 'idType', key: 'idType',
+    {
+      title: '证件类型',
+      dataIndex: 'idType',
+      key: 'idType',
       render: (val: string) => {
         const opt = idTypeOptions.find((o) => o.value === val);
         return opt?.label || val;
       },
+    },
+    {
+      title: '证件号码',
+      dataIndex: 'idNumber',
+      key: 'idNumber',
+      render: (val: string) => val ? `${val.substring(0, 4)}****${val.substring(val.length - 4)}` : '-',
     },
     { title: '随行人数', dataIndex: 'accompanyCount', key: 'accompanyCount' },
     {
@@ -182,11 +211,14 @@ function FrontDeskPage() {
         record.status === 'in_building' ? (
           <Button
             size="small"
+            danger
             icon={<LogoutOutlined />}
             onClick={() => handleCheckout(record.id)}
           >
             签离
           </Button>
+        ) : record.status === 'registered' ? (
+          <Tag color="blue">待入场</Tag>
         ) : (
           <Tag color="gray">{visitorStatusMap[record.status]?.label || record.status}</Tag>
         ),
@@ -197,13 +229,21 @@ function FrontDeskPage() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <Row gutter={16}>
         <Col span={14}>
-          <Card title="待处理预约队列" size="small">
+          <Card
+            title={
+              <Space>
+                <Badge count={appointments.length} style={{ backgroundColor: '#1677ff' }} />
+                已确认预约队列
+              </Space>
+            }
+            size="small"
+          >
             <Table
               rowKey="id"
               columns={appointmentColumns}
               dataSource={appointments}
               loading={loading}
-              pagination={{ pageSize: 5, showTotal: (total) => `共 ${total} 条` }}
+              pagination={{ pageSize: 5, showTotal: (total) => `共 ${total} 条待登记` }}
               onRow={(record) => ({
                 onClick: () => handleSelectAppointment(record.id),
                 style: {
@@ -220,7 +260,7 @@ function FrontDeskPage() {
             {idMismatch && (
               <Alert
                 message="证件号码不匹配"
-                description="所输入的证件号码与预约信息不一致，请核实后再登记"
+                description="所输入的证件信息与预约信息不一致，已生成告警通知安保人员核实，访客仍可登记入场"
                 type="warning"
                 showIcon
                 closable
@@ -229,33 +269,33 @@ function FrontDeskPage() {
               />
             )}
             <Form form={form} layout="vertical" onFinish={handleRegister}>
-              <Form.Item label="选择预约" required>
+              <Form.Item label="选择已确认预约" required>
                 <Select
-                  placeholder="请选择预约"
+                  placeholder="请选择员工已确认的预约"
                   value={selectedAppointment?.id}
                   onChange={handleSelectAppointment}
                   options={appointments.map((a) => ({
-                    label: `${a.visitorName} - ${a.visitorCompany}`,
+                    label: `${a.visitorName} - ${a.visitorCompany}（被访: ${a.employeeName}）`,
                     value: a.id,
                   }))}
                 />
               </Form.Item>
               <Form.Item name="name" label="访客姓名">
-                <Input disabled placeholder="自动填充" />
+                <Input disabled placeholder="自动从预约填充" />
               </Form.Item>
               <Form.Item name="company" label="来访公司">
-                <Input disabled placeholder="自动填充" />
+                <Input disabled placeholder="自动从预约填充" />
               </Form.Item>
               <Form.Item name="phone" label="联系电话">
-                <Input disabled placeholder="自动填充" />
+                <Input disabled placeholder="自动从预约填充" />
               </Form.Item>
               <Form.Item name="idType" label="证件类型" rules={[{ required: true, message: '请选择证件类型' }]}>
                 <Select options={idTypeOptions} placeholder="请选择" />
               </Form.Item>
               <Form.Item name="idNumber" label="证件号码" rules={[{ required: true, message: '请输入证件号码' }]}>
-                <Input placeholder="请输入" onChange={handleIdNumberChange} />
+                <Input placeholder="请输入证件号码" onChange={handleIdNumberChange} />
               </Form.Item>
-              <Form.Item label="拍照">
+              <Form.Item label="拍照存档">
                 <Upload listType="picture-card" maxCount={1} beforeUpload={() => false}>
                   <CameraOutlined style={{ fontSize: 24 }} />
                 </Upload>
@@ -282,6 +322,57 @@ function FrontDeskPage() {
           pagination={{ pageSize: 10, showTotal: (total) => `共 ${total} 条` }}
         />
       </Card>
+
+      <Modal
+        title="访客证"
+        open={printBadgeVisible}
+        onCancel={() => {
+          setPrintBadgeVisible(false);
+          setRegisteredVisitor(null);
+        }}
+        footer={[
+          <Button key="close" onClick={() => { setPrintBadgeVisible(false); setRegisteredVisitor(null); }}>
+            关闭
+          </Button>,
+          <Button key="print" type="primary" icon={<PrinterOutlined />} onClick={() => window.print()}>
+            打印
+          </Button>,
+        ]}
+        width={400}
+      >
+        {registeredVisitor && (
+          <Card
+            size="small"
+            style={{
+              border: '2px solid #1677ff',
+              borderRadius: 8,
+              textAlign: 'center',
+              padding: 16,
+            }}
+          >
+            <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 16, color: '#1677ff' }}>
+              访客证
+            </div>
+            <Descriptions column={1} size="small" bordered>
+              <Descriptions.Item label="姓名">{registeredVisitor.name}</Descriptions.Item>
+              <Descriptions.Item label="公司">{registeredVisitor.company || '-'}</Descriptions.Item>
+              <Descriptions.Item label="证件">
+                {idTypeOptions.find((o) => o.value === registeredVisitor.idType)?.label || '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label="随行人数">{registeredVisitor.accompanyCount}</Descriptions.Item>
+              <Descriptions.Item label="登记时间">
+                {dayjs(registeredVisitor.createdAt).format('YYYY-MM-DD HH:mm')}
+              </Descriptions.Item>
+              {selectedAppointment && (
+                <>
+                  <Descriptions.Item label="被访员工">{selectedAppointment.employeeName}</Descriptions.Item>
+                  <Descriptions.Item label="来访事由">{selectedAppointment.purpose}</Descriptions.Item>
+                </>
+              )}
+            </Descriptions>
+          </Card>
+        )}
+      </Modal>
     </div>
   );
 }

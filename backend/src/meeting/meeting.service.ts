@@ -50,23 +50,30 @@ export class MeetingService {
     const start = new Date(dto.startTime);
     const end = new Date(dto.endTime);
 
-    const conflicts = await this.bookingRepo
+    const room = await this.roomRepo.findOne({ where: { id: dto.meetingRoomId } });
+    const roomName = room?.name || `#${dto.meetingRoomId}`;
+
+    const conflictingBookings = await this.bookingRepo
       .createQueryBuilder('b')
       .where('b.meetingRoomId = :roomId', { roomId: dto.meetingRoomId })
       .andWhere('b.status NOT IN (:...excluded)', { excluded: [MeetingBookingStatus.CANCELLED, MeetingBookingStatus.COMPLETED] })
       .andWhere('b.startTime < :end AND b.endTime > :start', { start, end })
-      .getCount();
+      .getMany();
 
-    if (conflicts > 0) {
+    if (conflictingBookings.length > 0) {
+      const conflictInfo = conflictingBookings
+        .map((b) => `${b.visitorName} (${b.startTime.toISOString()} - ${b.endTime.toISOString()})`)
+        .join(', ');
+
       await this.alertRepo.save({
         type: AlertType.MEETING_CONFLICT,
         severity: AlertSeverity.MEDIUM,
         visitorId: dto.visitorId,
         visitorName: dto.visitorName,
-        message: `Meeting conflict detected for room #${dto.meetingRoomId}`,
+        message: `会议室 ${roomName} 存在时间冲突：访客 ${dto.visitorName} 预约时段 (${start.toLocaleString('zh-CN')} - ${end.toLocaleString('zh-CN')}) 与已有预约冲突: ${conflictInfo}`,
         handled: false,
       });
-      throw new BadRequestException('Meeting room has a time conflict');
+      throw new BadRequestException(`会议室 ${roomName} 存在时间冲突，已生成冲突告警`);
     }
 
     const booking = this.bookingRepo.create({
@@ -101,19 +108,34 @@ export class MeetingService {
 
     const newEnd = new Date(dto.newEndTime);
     if (newEnd <= booking.endTime) {
-      throw new BadRequestException('New end time must be after current end time');
+      throw new BadRequestException('新结束时间必须晚于当前结束时间');
     }
 
-    const conflicts = await this.bookingRepo
+    const room = await this.roomRepo.findOne({ where: { id: booking.meetingRoomId } });
+    const roomName = room?.name || `#${booking.meetingRoomId}`;
+
+    const conflictingBookings = await this.bookingRepo
       .createQueryBuilder('b')
       .where('b.meetingRoomId = :roomId', { roomId: booking.meetingRoomId })
       .andWhere('b.id != :id', { id: booking.id })
       .andWhere('b.status NOT IN (:...excluded)', { excluded: [MeetingBookingStatus.CANCELLED, MeetingBookingStatus.COMPLETED] })
       .andWhere('b.startTime < :end AND b.endTime > :start', { start: booking.endTime, end: newEnd })
-      .getCount();
+      .getMany();
 
-    if (conflicts > 0) {
-      throw new BadRequestException('Cannot extend: meeting room has a time conflict');
+    if (conflictingBookings.length > 0) {
+      const conflictInfo = conflictingBookings
+        .map((b) => `${b.visitorName} (${b.startTime.toISOString()} - ${b.endTime.toISOString()})`)
+        .join(', ');
+
+      await this.alertRepo.save({
+        type: AlertType.MEETING_CONFLICT,
+        severity: AlertSeverity.MEDIUM,
+        visitorId: booking.visitorId,
+        visitorName: booking.visitorName,
+        message: `会议室 ${roomName} 延时冲突：访客 ${booking.visitorName} 申请延时至 ${newEnd.toLocaleString('zh-CN')}，与已有预约冲突: ${conflictInfo}`,
+        handled: false,
+      });
+      throw new BadRequestException(`会议室 ${roomName} 延时时段存在冲突，已生成冲突告警`);
     }
 
     booking.originalEndTime = booking.endTime;

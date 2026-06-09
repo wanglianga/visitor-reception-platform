@@ -21,7 +21,7 @@ export class VisitorService {
     private alertRepo: Repository<Alert>,
   ) {}
 
-  async register(dto: RegisterVisitorDto): Promise<Visitor> {
+  async register(dto: RegisterVisitorDto): Promise<any> {
     const visitor = this.visitorRepo.create({
       name: dto.name,
       company: dto.company,
@@ -30,27 +30,35 @@ export class VisitorService {
       idType: dto.idType || undefined,
       photo: dto.photo,
       accompanyCount: dto.accompanyCount || 0,
+      appointmentId: dto.appointmentId || null,
       status: VisitorStatus.REGISTERED,
     });
     const saved = await this.visitorRepo.save(visitor);
 
+    let idMismatch = false;
+
     if (dto.appointmentId) {
       const appointment = await this.appointmentRepo.findOne({ where: { id: dto.appointmentId } });
       if (appointment) {
+        appointment.visitorId = saved.id;
+
         if (appointment.visitorName !== dto.name || appointment.visitorPhone !== dto.phone) {
+          idMismatch = true;
           await this.alertRepo.save({
             type: AlertType.ID_MISMATCH,
             severity: AlertSeverity.HIGH,
             visitorId: saved.id,
             visitorName: saved.name,
-            message: `Visitor info does not match appointment #${dto.appointmentId}`,
+            message: `访客 ${saved.name} 的证件信息与预约 #${dto.appointmentId} 不匹配，预约人: ${appointment.visitorName} (${appointment.visitorPhone})，实际: ${dto.name} (${dto.phone || '未提供'})`,
             handled: false,
           });
-        } else {
-          appointment.visitorId = saved.id;
-          appointment.status = AppointmentStatus.CONFIRMED;
-          await this.appointmentRepo.save(appointment);
         }
+
+        if (appointment.status === AppointmentStatus.PENDING) {
+          appointment.status = AppointmentStatus.CONFIRMED;
+        }
+
+        await this.appointmentRepo.save(appointment);
       }
     } else {
       await this.alertRepo.save({
@@ -58,7 +66,7 @@ export class VisitorService {
         severity: AlertSeverity.MEDIUM,
         visitorId: saved.id,
         visitorName: saved.name,
-        message: `Temporary visitor registered without appointment`,
+        message: `访客 ${saved.name} 无预约直接到访登记，请核实身份`,
         handled: false,
       });
     }
@@ -75,7 +83,7 @@ export class VisitorService {
       status: AccessPermissionStatus.ACTIVE,
     });
 
-    return saved;
+    return { ...saved, idMismatch };
   }
 
   async findAll(status?: VisitorStatus): Promise<Visitor[]> {

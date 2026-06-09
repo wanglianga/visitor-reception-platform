@@ -14,6 +14,7 @@ import {
   DatePicker,
   Checkbox,
   Alert,
+  Badge,
   message,
 } from 'antd';
 import {
@@ -21,16 +22,17 @@ import {
   ClockCircleOutlined,
   CloseOutlined,
   ExclamationCircleOutlined,
+  CheckCircleOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import api from '../api/index';
-import AlertPanel from '../components/AlertPanel';
 import type {
   MeetingRoom,
   MeetingBooking,
   CreateMeetingBookingParams,
   ExtendBookingParams,
   Visitor,
+  Alert as AlertType,
 } from '../types/index';
 
 const roomStatusMap: Record<string, { color: string; label: string }> = {
@@ -49,7 +51,7 @@ const bookingStatusMap: Record<string, { color: string; label: string }> = {
 function MeetingAdminPage() {
   const [rooms, setRooms] = useState<MeetingRoom[]>([]);
   const [bookings, setBookings] = useState<MeetingBooking[]>([]);
-  const [conflicts, setConflicts] = useState<any[]>([]);
+  const [conflictAlerts, setConflictAlerts] = useState<AlertType[]>([]);
   const [visitors, setVisitors] = useState<Visitor[]>([]);
   const [roomLoading, setRoomLoading] = useState(false);
   const [bookingLoading, setBookingLoading] = useState(false);
@@ -81,10 +83,10 @@ function MeetingAdminPage() {
     }
   }, []);
 
-  const fetchConflicts = useCallback(async () => {
+  const fetchConflictAlerts = useCallback(async () => {
     try {
-      const res: any = await api.get('/meeting-bookings/conflicts');
-      setConflicts(Array.isArray(res) ? res : []);
+      const res: any = await api.get('/alerts', { params: { type: 'meeting_conflict' } });
+      setConflictAlerts(Array.isArray(res) ? res : []);
     } catch {}
   }, []);
 
@@ -98,9 +100,11 @@ function MeetingAdminPage() {
   useEffect(() => {
     fetchRooms();
     fetchBookings();
-    fetchConflicts();
+    fetchConflictAlerts();
     fetchVisitors();
-  }, [fetchRooms, fetchBookings, fetchConflicts, fetchVisitors]);
+    const interval = setInterval(fetchConflictAlerts, 30000);
+    return () => clearInterval(interval);
+  }, [fetchRooms, fetchBookings, fetchConflictAlerts, fetchVisitors]);
 
   const getRoomName = (meetingRoomId: number) => {
     const room = rooms.find((r) => r.id === meetingRoomId);
@@ -124,7 +128,7 @@ function MeetingAdminPage() {
       setBookingModalOpen(false);
       bookingForm.resetFields();
       fetchBookings();
-      fetchConflicts();
+      fetchConflictAlerts();
     } catch {}
   };
 
@@ -160,6 +164,16 @@ function MeetingAdminPage() {
     setExtendModalOpen(true);
   };
 
+  const handleConflictAlert = async (alertId: number) => {
+    try {
+      await api.patch(`/alerts/${alertId}/handle`, { handledBy: '会议室管理员' });
+      message.success('冲突告警已处理');
+      fetchConflictAlerts();
+    } catch {}
+  };
+
+  const unhandledConflicts = conflictAlerts.filter((a) => !a.handled);
+
   const bookingColumns = [
     {
       title: '会议室',
@@ -179,6 +193,17 @@ function MeetingAdminPage() {
       dataIndex: 'endTime',
       key: 'endTime',
       render: (val: string) => val ? dayjs(val).format('MM-DD HH:mm') : '-',
+    },
+    {
+      title: '延时',
+      dataIndex: 'extended',
+      key: 'extended',
+      render: (val: boolean, record: MeetingBooking) =>
+        val ? (
+          <Tag color="orange">
+            延至 {dayjs(record.endTime).format('HH:mm')}
+          </Tag>
+        ) : '-',
     },
     {
       title: '茶水服务',
@@ -233,6 +258,73 @@ function MeetingAdminPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <Card
+        title={
+          <Space>
+            <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />
+            会议室冲突预警
+            {unhandledConflicts.length > 0 && (
+              <Badge count={unhandledConflicts.length} style={{ marginLeft: 8 }} />
+            )}
+          </Space>
+        }
+        size="small"
+      >
+        {conflictAlerts.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 24, color: '#999' }}>
+            暂无冲突预警
+          </div>
+        ) : (
+          <Row gutter={[16, 16]}>
+            {conflictAlerts.map((alertItem) => (
+              <Col span={12} key={alertItem.id}>
+                <Card
+                  size="small"
+                  style={{
+                    borderLeft: `3px solid ${alertItem.handled ? '#d9d9d9' : '#ff4d4f'}`,
+                    opacity: alertItem.handled ? 0.6 : 1,
+                  }}
+                >
+                  <Space align="start" style={{ width: '100%' }}>
+                    <ExclamationCircleOutlined style={{ color: '#ff4d4f', fontSize: 20 }} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ marginBottom: 4 }}>
+                        <Space>
+                          <Tag color="red">预约冲突</Tag>
+                          <Tag color="orange">中</Tag>
+                        </Space>
+                      </div>
+                      <div style={{ marginBottom: 4, color: '#333' }}>{alertItem.message}</div>
+                      <div style={{ fontSize: 12, color: '#999', marginBottom: 8 }}>
+                        {dayjs(alertItem.createdAt).format('YYYY-MM-DD HH:mm:ss')}
+                        {alertItem.visitorName && ` | 访客: ${alertItem.visitorName}`}
+                      </div>
+                      <div>
+                        {alertItem.handled ? (
+                          <Tag color="green" icon={<CheckCircleOutlined />}>
+                            已处理 by {alertItem.handledBy}
+                          </Tag>
+                        ) : (
+                          <Space>
+                            <Button
+                              size="small"
+                              type="primary"
+                              onClick={() => handleConflictAlert(alertItem.id)}
+                            >
+                              处理冲突
+                            </Button>
+                          </Space>
+                        )}
+                      </div>
+                    </div>
+                  </Space>
+                </Card>
+              </Col>
+            ))}
+          </Row>
+        )}
+      </Card>
+
+      <Card
         title="会议室管理"
         size="small"
         extra={
@@ -281,35 +373,6 @@ function MeetingAdminPage() {
           loading={bookingLoading}
           pagination={{ pageSize: 10, showTotal: (total) => `共 ${total} 条` }}
         />
-      </Card>
-
-      <Card
-        title={
-          <Space>
-            <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />
-            冲突预警
-          </Space>
-        }
-        size="small"
-      >
-        {conflicts.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: 24, color: '#999' }}>
-            暂无冲突预警
-          </div>
-        ) : (
-          <Row gutter={[16, 16]}>
-            {conflicts.map((c, i) => (
-              <Col span={12} key={c.id || i}>
-                <Alert
-                  type="error"
-                  showIcon
-                  message={c.message || '预约冲突'}
-                  description={c.message || ''}
-                />
-              </Col>
-            ))}
-          </Row>
-        )}
       </Card>
 
       <Modal
@@ -376,8 +439,6 @@ function MeetingAdminPage() {
           </Form.Item>
         </Form>
       </Modal>
-
-      <AlertPanel />
     </div>
   );
 }
