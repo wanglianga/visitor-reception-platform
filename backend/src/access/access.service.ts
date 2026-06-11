@@ -7,6 +7,7 @@ import { AccessRecord } from './access-record.entity';
 import { OverstayRecord } from './overstay-record.entity';
 import { Visitor } from '../visitor/visitor.entity';
 import { Alert } from '../alert/alert.entity';
+import { SensitiveAreaService } from '../sensitive-area/sensitive-area.service';
 import { CreateAccessPermissionDto, UpdateAccessPermissionDto, CreateAccessRecordDto, HandleOverstayDto } from './access.dto';
 import { AccessPermissionStatus, VisitorStatus, AccessDirection, AlertType, AlertSeverity, OverstayResult } from '../common/enums';
 
@@ -25,6 +26,7 @@ export class AccessService {
     private visitorRepo: Repository<Visitor>,
     @InjectRepository(Alert)
     private alertRepo: Repository<Alert>,
+    private sensitiveAreaService: SensitiveAreaService,
   ) {}
 
   @Cron(CronExpression.EVERY_5_MINUTES)
@@ -97,6 +99,35 @@ export class AccessService {
 
     if (dto.direction === AccessDirection.IN) {
       await this.visitorRepo.update({ id: dto.visitorId }, { status: VisitorStatus.IN_BUILDING });
+
+      const permission = await this.permissionRepo.findOne({
+        where: { visitorId: dto.visitorId, status: AccessPermissionStatus.ACTIVE },
+      });
+      if (permission) {
+        const allowedFloors = permission.allowedFloors.split(',');
+        const now = new Date();
+        const inTimeRange = now >= permission.validFrom && now <= permission.validUntil;
+        const floorAllowed = allowedFloors.includes(dto.floor);
+
+        if (!inTimeRange || !floorAllowed) {
+          await this.alertRepo.save({
+            type: AlertType.SENSITIVE_ACCESS_VIOLATION,
+            severity: AlertSeverity.HIGH,
+            visitorId: dto.visitorId,
+            visitorName: dto.visitorName,
+            message: `安防异常：访客 ${dto.visitorName} 在闸机 ${dto.gate} 刷卡进入 ${dto.floor}，${!inTimeRange ? '超出通行时间段' : ''}${!inTimeRange && !floorAllowed ? '，' : ''}${!floorAllowed ? `楼层不在允许范围内（允许: ${permission.allowedFloors}）` : ''}`,
+            handled: false,
+          });
+          this.logger.warn(`Access violation: visitor ${dto.visitorName} at ${dto.floor} gate ${dto.gate}`);
+        }
+      }
+
+      await this.sensitiveAreaService.checkAndRecordViolation(
+        dto.visitorId,
+        dto.visitorName,
+        dto.floor,
+        dto.gate,
+      );
     } else if (dto.direction === AccessDirection.OUT) {
       await this.visitorRepo.update({ id: dto.visitorId }, { status: VisitorStatus.LEFT });
       await this.permissionRepo.update(

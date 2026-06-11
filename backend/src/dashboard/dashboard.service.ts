@@ -7,7 +7,9 @@ import { AccessPermission } from '../access/access-permission.entity';
 import { AccessRecord } from '../access/access-record.entity';
 import { MeetingBooking } from '../meeting/meeting-booking.entity';
 import { Alert } from '../alert/alert.entity';
-import { AppointmentStatus, VisitorStatus, AccessPermissionStatus, AlertType } from '../common/enums';
+import { SensitiveAreaApproval } from '../sensitive-area/sensitive-area-approval.entity';
+import { MeetingExtensionRequest } from '../meeting/meeting-extension-request.entity';
+import { AppointmentStatus, VisitorStatus, AccessPermissionStatus, AlertType, SensitiveAreaApprovalStatus, MeetingExtensionStatus } from '../common/enums';
 
 @Injectable()
 export class DashboardService {
@@ -24,6 +26,10 @@ export class DashboardService {
     private bookingRepo: Repository<MeetingBooking>,
     @InjectRepository(Alert)
     private alertRepo: Repository<Alert>,
+    @InjectRepository(SensitiveAreaApproval)
+    private sensitiveApprovalRepo: Repository<SensitiveAreaApproval>,
+    @InjectRepository(MeetingExtensionRequest)
+    private extensionRequestRepo: Repository<MeetingExtensionRequest>,
   ) {}
 
   async getStats() {
@@ -35,6 +41,8 @@ export class DashboardService {
       activePermissions,
       todayBookings,
       unhandledAlerts,
+      pendingSensitiveApprovals,
+      pendingExtensionRequests,
     ] = await Promise.all([
       this.appointmentRepo.count(),
       this.appointmentRepo.count({ where: { status: AppointmentStatus.PENDING } }),
@@ -43,6 +51,8 @@ export class DashboardService {
       this.permissionRepo.count({ where: { status: AccessPermissionStatus.ACTIVE } }),
       this.bookingRepo.count(),
       this.alertRepo.count({ where: { handled: false } }),
+      this.sensitiveApprovalRepo.count({ where: { status: SensitiveAreaApprovalStatus.PENDING } }),
+      this.extensionRequestRepo.count({ where: { status: MeetingExtensionStatus.PENDING } }),
     ]);
 
     return {
@@ -53,6 +63,8 @@ export class DashboardService {
       activePermissions,
       totalBookings: todayBookings,
       unhandledAlerts,
+      pendingSensitiveApprovals,
+      pendingExtensionRequests,
     };
   }
 

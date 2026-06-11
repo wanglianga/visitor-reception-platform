@@ -6,6 +6,8 @@ export interface DashboardStats {
   activePermissions: number;
   totalBookings: number;
   unhandledAlerts: number;
+  pendingSensitiveApprovals: number;
+  pendingExtensionRequests: number;
 }
 
 export interface RecentActivity {
@@ -165,7 +167,7 @@ export interface ExtendBookingParams {
 
 export interface Alert {
   id: number;
-  type: 'id_mismatch' | 'temporary_visitor' | 'timeout' | 'meeting_conflict' | 'overstay' | 'companion_pending';
+  type: 'id_mismatch' | 'temporary_visitor' | 'timeout' | 'meeting_conflict' | 'overstay' | 'companion_pending' | 'sensitive_access_violation' | 'sensitive_area_pending' | 'meeting_extension_request';
   severity: 'low' | 'medium' | 'high';
   visitorId: number | null;
   visitorName: string | null;
@@ -230,4 +232,92 @@ export interface HandleOverstayParams {
   result: 'normal_delay' | 'forgot_badge' | 'abnormal';
   note?: string;
   handledBy: string;
+}
+
+export interface SensitiveArea {
+  id: number;
+  name: string;
+  type: 'r_and_d' | 'server_room' | 'sample_room';
+  floor: string;
+  description: string | null;
+  departmentHead: string;
+  requireApproval: boolean;
+  createdAt: string;
+}
+
+export interface SensitiveAreaApproval {
+  id: number;
+  visitorId: number;
+  visitorName: string;
+  sensitiveAreaId: number;
+  sensitiveAreaName: string;
+  floor: string;
+  validFrom: string;
+  validUntil: string;
+  status: 'pending' | 'approved' | 'rejected';
+  reason: string | null;
+  approvedBy: string | null;
+  approvedAt: string | null;
+  rejectedReason: string | null;
+  permissionId: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RequestSensitiveAccessParams {
+  visitorId: number;
+  visitorName: string;
+  sensitiveAreaId: number;
+  validFrom: string;
+  validUntil: string;
+  reason?: string;
+  permissionId?: number;
+}
+
+export interface HandleSensitiveApprovalParams {
+  status: 'approved' | 'rejected';
+  approvedBy: string;
+  rejectedReason?: string;
+}
+
+export interface MeetingExtensionRequest {
+  id: number;
+  bookingId: number;
+  visitorId: number;
+  visitorName: string;
+  originalEndTime: string;
+  requestedEndTime: string;
+  status: 'pending' | 'approved' | 'rejected';
+  employeeConfirmedBy: string | null;
+  employeeConfirmedAt: string | null;
+  employeeConfirmed: boolean;
+  requestedBy: string | null;
+  requestedAt: string | null;
+  rejectedReason: string | null;
+  hasConflict: boolean;
+  suggestedRoomId: number | null;
+  suggestedRoomName: string | null;
+  roomChanged: boolean;
+  note: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RequestExtensionParams {
+  newEndTime: string;
+  requestedBy?: string;
+}
+
+export interface HandleExtensionRequestParams {
+  status: 'approved' | 'rejected';
+  handledBy: string;
+  rejectedReason?: string;
+  suggestedRoomId?: number;
+  roomChanged?: boolean;
+}
+
+export interface ConfirmVisitorStayParams {
+  confirmed: boolean;
+  confirmedBy: string;
+  note?: string;
 }

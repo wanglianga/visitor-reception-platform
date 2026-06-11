@@ -9,6 +9,7 @@ import { AlertModule } from './alert/alert.module';
 import { CompanionModule } from './companion/companion.module';
 import { SeedModule } from './seed/seed.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { SensitiveAreaModule } from './sensitive-area/sensitive-area.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
     CompanionModule,
     SeedModule,
     DashboardModule,
+    SensitiveAreaModule,
   ],
 })
 export class AppModule {}

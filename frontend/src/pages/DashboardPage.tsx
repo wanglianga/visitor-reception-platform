@@ -7,6 +7,8 @@ import {
   AlertOutlined,
   UserOutlined,
   CheckCircleOutlined,
+  SecurityScanOutlined,
+  FieldTimeOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import api from '../api/index';
@@ -174,7 +176,26 @@ function DashboardPage() {
             />
           </Card>
         </Col>
-        <Col span={12} />
+        <Col span={6}>
+          <Card size="small" hoverable>
+            <Statistic
+              title="敏感区域待审批"
+              value={stats?.pendingSensitiveApprovals || 0}
+              prefix={<SecurityScanOutlined />}
+              valueStyle={{ color: stats?.pendingSensitiveApprovals ? '#faad14' : '#52c41a' }}
+            />
+          </Card>
+        </Col>
+        <Col span={6}>
+          <Card size="small" hoverable>
+            <Statistic
+              title="会议延时待确认"
+              value={stats?.pendingExtensionRequests || 0}
+              prefix={<FieldTimeOutlined />}
+              valueStyle={{ color: stats?.pendingExtensionRequests ? '#1677ff' : '#52c41a' }}
+            />
+          </Card>
+        </Col>
       </Row>
 
       <Row gutter={16}>

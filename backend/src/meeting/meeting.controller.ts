@@ -6,8 +6,10 @@ import {
   CreateMeetingBookingDto,
   UpdateMeetingBookingDto,
   ExtendBookingDto,
+  HandleExtensionRequestDto,
+  ConfirmVisitorStayDto,
 } from './meeting.dto';
-import { MeetingBookingStatus } from '../common/enums';
+import { MeetingBookingStatus, MeetingExtensionStatus } from '../common/enums';
 
 @Controller()
 export class MeetingController {
@@ -46,6 +48,31 @@ export class MeetingController {
   @Post('meeting-bookings/:id/extend')
   extendBooking(@Param('id', ParseIntPipe) id: number, @Body() dto: ExtendBookingDto) {
     return this.meetingService.extendBooking(id, dto);
+  }
+
+  @Post('meeting-bookings/:id/request-extension')
+  requestExtension(@Param('id', ParseIntPipe) id: number, @Body() dto: ExtendBookingDto) {
+    return this.meetingService.requestExtension(id, dto);
+  }
+
+  @Get('meeting-extension-requests')
+  findAllExtensionRequests(@Query('status') status?: MeetingExtensionStatus) {
+    return this.meetingService.findAllExtensionRequests(status);
+  }
+
+  @Get('meeting-extension-requests/visitor/:visitorId')
+  findExtensionRequestsByVisitor(@Param('visitorId', ParseIntPipe) visitorId: number) {
+    return this.meetingService.findExtensionRequestsByVisitor(visitorId);
+  }
+
+  @Patch('meeting-extension-requests/:id/handle')
+  handleExtensionRequest(@Param('id', ParseIntPipe) id: number, @Body() dto: HandleExtensionRequestDto) {
+    return this.meetingService.handleExtensionRequest(id, dto);
+  }
+
+  @Post('meeting-extension-requests/:id/confirm-stay')
+  confirmVisitorStay(@Param('id', ParseIntPipe) id: number, @Body() dto: ConfirmVisitorStayDto) {
+    return this.meetingService.confirmVisitorStay(id, dto);
   }
 
   @Get('meeting-bookings/conflicts')

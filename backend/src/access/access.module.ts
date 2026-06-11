@@ -7,9 +7,13 @@ import { Visitor } from '../visitor/visitor.entity';
 import { Alert } from '../alert/alert.entity';
 import { AccessService } from './access.service';
 import { AccessController } from './access.controller';
+import { SensitiveAreaModule } from '../sensitive-area/sensitive-area.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([AccessPermission, AccessRecord, OverstayRecord, Visitor, Alert])],
+  imports: [
+    TypeOrmModule.forFeature([AccessPermission, AccessRecord, OverstayRecord, Visitor, Alert]),
+    SensitiveAreaModule,
+  ],
   controllers: [AccessController],
   providers: [AccessService],
   exports: [AccessService],

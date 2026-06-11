@@ -27,6 +27,9 @@ import {
   EnvironmentOutlined,
   PhoneOutlined,
   SafetyCertificateOutlined,
+  CheckOutlined,
+  CloseOutlined,
+  WarningOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import api from '../api/index';
@@ -40,6 +43,9 @@ import type {
   OverstayDetail,
   OverstayRecord,
   HandleOverstayParams,
+  SensitiveArea,
+  SensitiveAreaApproval,
+  RequestSensitiveAccessParams,
 } from '../types/index';
 
 const permissionStatusMap: Record<string, { color: string; label: string }> = {
@@ -51,6 +57,12 @@ const overstayResultMap: Record<string, { color: string; label: string }> = {
   normal_delay: { color: 'blue', label: '正常延时' },
   forgot_badge: { color: 'orange', label: '忘记归还访客牌' },
   abnormal: { color: 'red', label: '异常滞留' },
+};
+
+const sensitiveAreaTypeMap: Record<string, { color: string; label: string }> = {
+  r_and_d: { color: 'purple', label: '研发楼层' },
+  server_room: { color: 'red', label: '机房' },
+  sample_room: { color: 'orange', label: '样品间' },
 };
 
 const floorOptions = [
@@ -82,6 +94,15 @@ function SecurityPage() {
   const [grantForm] = Form.useForm();
   const [recordForm] = Form.useForm();
   const [overstayForm] = Form.useForm();
+
+  const [sensitiveAreas, setSensitiveAreas] = useState<SensitiveArea[]>([]);
+  const [pendingApprovals, setPendingApprovals] = useState<SensitiveAreaApproval[]>([]);
+  const [violationAlerts, setViolationAlerts] = useState<any[]>([]);
+  const [requestAccessModalOpen, setRequestAccessModalOpen] = useState(false);
+  const [rejectModalOpen, setRejectModalOpen] = useState(false);
+  const [requestAccessForm] = Form.useForm();
+  const [rejectForm] = Form.useForm();
+  const [selectedApproval, setSelectedApproval] = useState<SensitiveAreaApproval | null>(null);
 
   const fetchPermissions = useCallback(async () => {
     setPermLoading(true);
@@ -126,13 +147,37 @@ function SecurityPage() {
     } catch {}
   }, []);
 
+  const fetchSensitiveAreas = useCallback(async () => {
+    try {
+      const res: any = await api.get('/sensitive-areas');
+      setSensitiveAreas(Array.isArray(res) ? res : []);
+    } catch {}
+  }, []);
+
+  const fetchPendingApprovals = useCallback(async () => {
+    try {
+      const res: any = await api.get('/sensitive-areas/approvals', { params: { status: 'pending' } });
+      setPendingApprovals(Array.isArray(res) ? res : []);
+    } catch {}
+  }, []);
+
+  const fetchViolationAlerts = useCallback(async () => {
+    try {
+      const res: any = await api.get('/alerts', { params: { type: 'sensitive_access_violation' } });
+      setViolationAlerts(Array.isArray(res) ? res : []);
+    } catch {}
+  }, []);
+
   useEffect(() => {
     fetchPermissions();
     fetchRecords();
     fetchOverstays();
     fetchOverstayRecords();
     fetchVisitors();
-  }, [fetchPermissions, fetchRecords, fetchOverstays, fetchOverstayRecords, fetchVisitors]);
+    fetchSensitiveAreas();
+    fetchPendingApprovals();
+    fetchViolationAlerts();
+  }, [fetchPermissions, fetchRecords, fetchOverstays, fetchOverstayRecords, fetchVisitors, fetchSensitiveAreas, fetchPendingApprovals, fetchViolationAlerts]);
 
   const handleRevoke = async (id: number) => {
     try {
@@ -231,6 +276,180 @@ function SecurityPage() {
       fetchVisitors();
     } catch {}
   };
+
+  const handleApproveAccess = async (approval: SensitiveAreaApproval) => {
+    try {
+      await api.patch(`/sensitive-areas/approvals/${approval.id}/handle`, {
+        status: 'approved',
+        approvedBy: '部门负责人',
+      });
+      message.success('已批准通行申请');
+      fetchPendingApprovals();
+      fetchViolationAlerts();
+    } catch {}
+  };
+
+  const handleOpenReject = (approval: SensitiveAreaApproval) => {
+    setSelectedApproval(approval);
+    rejectForm.resetFields();
+    setRejectModalOpen(true);
+  };
+
+  const handleRejectSubmit = async (values: any) => {
+    if (!selectedApproval) return;
+    try {
+      await api.patch(`/sensitive-areas/approvals/${selectedApproval.id}/handle`, {
+        status: 'rejected',
+        approvedBy: '部门负责人',
+        rejectedReason: values.rejectedReason,
+      });
+      message.success('已驳回通行申请');
+      setRejectModalOpen(false);
+      rejectForm.resetFields();
+      setSelectedApproval(null);
+      fetchPendingApprovals();
+      fetchViolationAlerts();
+    } catch {}
+  };
+
+  const handleRequestAccess = async (values: any) => {
+    const selectedVisitor = visitors.find((v) => v.id === values.visitorId);
+    const params: RequestSensitiveAccessParams = {
+      visitorId: values.visitorId,
+      visitorName: selectedVisitor?.name || '',
+      sensitiveAreaId: values.sensitiveAreaId,
+      validFrom: values.validTime[0].toISOString(),
+      validUntil: values.validTime[1].toISOString(),
+      reason: values.reason,
+    };
+    try {
+      await api.post('/sensitive-areas/request-access', params);
+      message.success('通行申请已提交');
+      setRequestAccessModalOpen(false);
+      requestAccessForm.resetFields();
+      fetchPendingApprovals();
+    } catch {}
+  };
+
+  const handleViolationAlert = async (alertId: number) => {
+    try {
+      await api.patch(`/alerts/${alertId}/handle`);
+      message.success('异常已处理');
+      fetchViolationAlerts();
+    } catch {}
+  };
+
+  const approvalColumns = [
+    { title: '访客姓名', dataIndex: 'visitorName', key: 'visitorName' },
+    { title: '敏感区域', dataIndex: 'sensitiveAreaName', key: 'sensitiveAreaName' },
+    { title: '楼层', dataIndex: 'floor', key: 'floor' },
+    {
+      title: '有效时间',
+      key: 'validPeriod',
+      render: (_: any, record: SensitiveAreaApproval) =>
+        `${dayjs(record.validFrom).format('MM-DD HH:mm')} ~ ${dayjs(record.validUntil).format('MM-DD HH:mm')}`,
+    },
+    { title: '原因', dataIndex: 'reason', key: 'reason', ellipsis: true },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      key: 'status',
+      render: (status: string) => {
+        const map: Record<string, { color: string; label: string }> = {
+          pending: { color: 'gold', label: '待审批' },
+          approved: { color: 'green', label: '已批准' },
+          rejected: { color: 'red', label: '已驳回' },
+        };
+        const info = map[status] || { color: 'default', label: status };
+        return <Tag color={info.color}>{info.label}</Tag>;
+      },
+    },
+    {
+      title: '操作',
+      key: 'action',
+      render: (_: any, record: SensitiveAreaApproval) =>
+        record.status === 'pending' ? (
+          <Space>
+            <Button
+              type="primary"
+              size="small"
+              icon={<CheckOutlined />}
+              style={{ background: '#52c41a', borderColor: '#52c41a' }}
+              onClick={() => handleApproveAccess(record)}
+            >
+              批准
+            </Button>
+            <Button
+              danger
+              size="small"
+              icon={<CloseOutlined />}
+              onClick={() => handleOpenReject(record)}
+            >
+              驳回
+            </Button>
+          </Space>
+        ) : (
+          '-'
+        ),
+    },
+  ];
+
+  const sensitiveAreaColumns = [
+    { title: '名称', dataIndex: 'name', key: 'name' },
+    {
+      title: '类型',
+      dataIndex: 'type',
+      key: 'type',
+      render: (type: string) => {
+        const info = sensitiveAreaTypeMap[type] || { color: 'default', label: type };
+        return <Tag color={info.color}>{info.label}</Tag>;
+      },
+    },
+    { title: '楼层', dataIndex: 'floor', key: 'floor' },
+    { title: '负责人', dataIndex: 'departmentHead', key: 'departmentHead' },
+    { title: '描述', dataIndex: 'description', key: 'description', ellipsis: true },
+    {
+      title: '需要审批',
+      dataIndex: 'requireApproval',
+      key: 'requireApproval',
+      render: (val: boolean) =>
+        val ? <Tag color="red">是</Tag> : <Tag color="default">否</Tag>,
+    },
+  ];
+
+  const violationColumns = [
+    { title: '访客姓名', dataIndex: 'visitorName', key: 'visitorName', render: (val: string | null) => val || '-' },
+    { title: '异常信息', dataIndex: 'message', key: 'message', ellipsis: true },
+    {
+      title: '发生时间',
+      dataIndex: 'createdAt',
+      key: 'createdAt',
+      render: (val: string) => val ? dayjs(val).format('YYYY-MM-DD HH:mm:ss') : '-',
+    },
+    {
+      title: '处理状态',
+      dataIndex: 'handled',
+      key: 'handled',
+      render: (val: boolean) =>
+        val ? <Tag color="green">已处理</Tag> : <Tag color="red">未处理</Tag>,
+    },
+    {
+      title: '操作',
+      key: 'action',
+      render: (_: any, record: any) =>
+        !record.handled ? (
+          <Button
+            type="primary"
+            size="small"
+            onClick={() => handleViolationAlert(record.id)}
+          >
+            处理
+          </Button>
+        ) : (
+          '-'
+        ),
+    },
+  ];
 
   const permissionColumns = [
     { title: '访客姓名', dataIndex: 'visitorName', key: 'visitorName' },
@@ -363,6 +582,69 @@ function SecurityPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <Card
+        title={
+          <Space>
+            <SafetyCertificateOutlined style={{ color: '#1677ff' }} />
+            敏感区域通行审批
+          </Space>
+        }
+        size="small"
+      >
+        <Table
+          rowKey="id"
+          columns={approvalColumns}
+          dataSource={pendingApprovals}
+          pagination={{ pageSize: 10, showTotal: (total) => `共 ${total} 条` }}
+          size="small"
+        />
+      </Card>
+
+      <Card
+        title={
+          <Space>
+            <WarningOutlined style={{ color: '#fa8c16' }} />
+            敏感区域管理
+          </Space>
+        }
+        size="small"
+        extra={
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => setRequestAccessModalOpen(true)}
+          >
+            申请通行
+          </Button>
+        }
+      >
+        <Table
+          rowKey="id"
+          columns={sensitiveAreaColumns}
+          dataSource={sensitiveAreas}
+          pagination={{ pageSize: 10, showTotal: (total) => `共 ${total} 条` }}
+          size="small"
+        />
+      </Card>
+
+      <Card
+        title={
+          <Space>
+            <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />
+            安防异常记录
+          </Space>
+        }
+        size="small"
+      >
+        <Table
+          rowKey="id"
+          columns={violationColumns}
+          dataSource={violationAlerts}
+          pagination={{ pageSize: 10, showTotal: (total) => `共 ${total} 条` }}
+          size="small"
+        />
+      </Card>
+
+      <Card
         title="通行权限管理"
         size="small"
         extra={
@@ -478,6 +760,74 @@ function SecurityPage() {
       </Card>
 
       <AlertPanel />
+
+      <Modal
+        title="驳回通行申请"
+        open={rejectModalOpen}
+        onCancel={() => {
+          setRejectModalOpen(false);
+          rejectForm.resetFields();
+          setSelectedApproval(null);
+        }}
+        onOk={() => rejectForm.submit()}
+      >
+        {selectedApproval && (
+          <Descriptions column={2} size="small" bordered style={{ marginBottom: 16 }}>
+            <Descriptions.Item label="访客姓名">{selectedApproval.visitorName}</Descriptions.Item>
+            <Descriptions.Item label="敏感区域">{selectedApproval.sensitiveAreaName}</Descriptions.Item>
+            <Descriptions.Item label="楼层">{selectedApproval.floor}</Descriptions.Item>
+            <Descriptions.Item label="有效时间">
+              {dayjs(selectedApproval.validFrom).format('MM-DD HH:mm')} ~ {dayjs(selectedApproval.validUntil).format('MM-DD HH:mm')}
+            </Descriptions.Item>
+          </Descriptions>
+        )}
+        <Form form={rejectForm} layout="vertical" onFinish={handleRejectSubmit}>
+          <Form.Item
+            name="rejectedReason"
+            label="驳回原因"
+            rules={[{ required: true, message: '请输入驳回原因' }]}
+          >
+            <Input.TextArea rows={4} placeholder="请输入驳回原因" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="申请敏感区域通行"
+        open={requestAccessModalOpen}
+        onCancel={() => {
+          setRequestAccessModalOpen(false);
+          requestAccessForm.resetFields();
+        }}
+        onOk={() => requestAccessForm.submit()}
+      >
+        <Form form={requestAccessForm} layout="vertical" onFinish={handleRequestAccess}>
+          <Form.Item name="visitorId" label="选择访客" rules={[{ required: true, message: '请选择访客' }]}>
+            <Select
+              placeholder="请选择访客"
+              options={visitors.map((v) => ({
+                label: `${v.name} - ${v.company || ''}${v.accompanyCount > 0 ? ` (随行${v.accompanyCount}人)` : ''}`,
+                value: v.id,
+              }))}
+            />
+          </Form.Item>
+          <Form.Item name="sensitiveAreaId" label="选择敏感区域" rules={[{ required: true, message: '请选择敏感区域' }]}>
+            <Select
+              placeholder="请选择敏感区域"
+              options={sensitiveAreas.map((a) => ({
+                label: `${a.name} (${a.floor})`,
+                value: a.id,
+              }))}
+            />
+          </Form.Item>
+          <Form.Item name="validTime" label="有效时间" rules={[{ required: true, message: '请选择有效时间' }]}>
+            <DatePicker.RangePicker showTime style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="reason" label="申请原因">
+            <Input.TextArea rows={3} placeholder="请输入申请原因" />
+          </Form.Item>
+        </Form>
+      </Modal>
 
       <Modal
         title="授予通行权限"

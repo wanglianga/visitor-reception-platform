@@ -6,11 +6,13 @@ import { AccessPermission } from '../access/access-permission.entity';
 import { AccessRecord } from '../access/access-record.entity';
 import { MeetingBooking } from '../meeting/meeting-booking.entity';
 import { Alert } from '../alert/alert.entity';
+import { SensitiveAreaApproval } from '../sensitive-area/sensitive-area-approval.entity';
+import { MeetingExtensionRequest } from '../meeting/meeting-extension-request.entity';
 import { DashboardService } from './dashboard.service';
 import { DashboardController } from './dashboard.controller';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Appointment, Visitor, AccessPermission, AccessRecord, MeetingBooking, Alert])],
+  imports: [TypeOrmModule.forFeature([Appointment, Visitor, AccessPermission, AccessRecord, MeetingBooking, Alert, SensitiveAreaApproval, MeetingExtensionRequest])],
   controllers: [DashboardController],
   providers: [DashboardService],
 })

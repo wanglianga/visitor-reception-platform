@@ -31,9 +31,14 @@ import type {
   MeetingBooking,
   CreateMeetingBookingParams,
   ExtendBookingParams,
+  MeetingExtensionRequest,
+  RequestExtensionParams,
+  HandleExtensionRequestParams,
   Visitor,
   Alert as AlertType,
 } from '../types/index';
+
+const { TextArea } = Input;
 
 const roomStatusMap: Record<string, { color: string; label: string }> = {
   available: { color: 'green', label: '空闲' },
@@ -58,8 +63,15 @@ function MeetingAdminPage() {
   const [bookingModalOpen, setBookingModalOpen] = useState(false);
   const [extendModalOpen, setExtendModalOpen] = useState(false);
   const [extendingBooking, setExtendingBooking] = useState<MeetingBooking | null>(null);
+  const [extensionRequests, setExtensionRequests] = useState<MeetingExtensionRequest[]>([]);
+  const [extensionRequestsLoading, setExtensionRequestsLoading] = useState(false);
+  const [requestExtensionModalOpen, setRequestExtensionModalOpen] = useState(false);
+  const [handleExtensionModalOpen, setHandleExtensionModalOpen] = useState(false);
+  const [selectedExtensionRequest, setSelectedExtensionRequest] = useState<MeetingExtensionRequest | null>(null);
   const [bookingForm] = Form.useForm();
   const [extendForm] = Form.useForm();
+  const [requestExtensionForm] = Form.useForm();
+  const [handleExtensionForm] = Form.useForm();
 
   const fetchRooms = useCallback(async () => {
     setRoomLoading(true);
@@ -97,14 +109,26 @@ function MeetingAdminPage() {
     } catch {}
   }, []);
 
+  const fetchExtensionRequests = useCallback(async () => {
+    setExtensionRequestsLoading(true);
+    try {
+      const res: any = await api.get('/meeting-extension-requests', { params: { status: 'pending' } });
+      setExtensionRequests(Array.isArray(res) ? res : []);
+    } catch {
+    } finally {
+      setExtensionRequestsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchRooms();
     fetchBookings();
     fetchConflictAlerts();
     fetchVisitors();
+    fetchExtensionRequests();
     const interval = setInterval(fetchConflictAlerts, 30000);
     return () => clearInterval(interval);
-  }, [fetchRooms, fetchBookings, fetchConflictAlerts, fetchVisitors]);
+  }, [fetchRooms, fetchBookings, fetchConflictAlerts, fetchVisitors, fetchExtensionRequests]);
 
   const getRoomName = (meetingRoomId: number) => {
     const room = rooms.find((r) => r.id === meetingRoomId);
@@ -164,6 +188,79 @@ function MeetingAdminPage() {
     setExtendModalOpen(true);
   };
 
+  const handleRequestExtension = async (values: any) => {
+    if (!extendingBooking) return;
+    const params: RequestExtensionParams = {
+      newEndTime: values.newEndTime.toISOString(),
+      requestedBy: '会议室管理员',
+    };
+    try {
+      await api.post(`/meeting-bookings/${extendingBooking.id}/request-extension`, params);
+      message.success('延时申请已提交');
+      setRequestExtensionModalOpen(false);
+      setExtendingBooking(null);
+      requestExtensionForm.resetFields();
+      fetchExtensionRequests();
+      fetchBookings();
+    } catch {}
+  };
+
+  const openRequestExtensionModal = (booking: MeetingBooking) => {
+    setExtendingBooking(booking);
+    requestExtensionForm.setFieldsValue({
+      newEndTime: dayjs(booking.endTime).add(30, 'minute'),
+    });
+    setRequestExtensionModalOpen(true);
+  };
+
+  const handleApproveExtension = async (
+    request: MeetingExtensionRequest,
+    roomChanged: boolean,
+    suggestedRoomId?: number,
+  ) => {
+    const params: HandleExtensionRequestParams = {
+      status: 'approved',
+      handledBy: '会议室管理员',
+      roomChanged,
+      ...(roomChanged && suggestedRoomId ? { suggestedRoomId } : {}),
+    };
+    try {
+      await api.patch(`/meeting-extension-requests/${request.id}/handle`, params);
+      message.success(roomChanged ? '已批准并更换会议室' : '延时申请已批准');
+      fetchExtensionRequests();
+      fetchBookings();
+      fetchRooms();
+    } catch {}
+  };
+
+  const handleRejectExtension = async (values: any) => {
+    if (!selectedExtensionRequest) return;
+    const params: HandleExtensionRequestParams = {
+      status: 'rejected',
+      handledBy: '会议室管理员',
+      rejectedReason: values.rejectedReason,
+    };
+    try {
+      await api.patch(`/meeting-extension-requests/${selectedExtensionRequest.id}/handle`, params);
+      message.success('延时申请已拒绝');
+      setHandleExtensionModalOpen(false);
+      setSelectedExtensionRequest(null);
+      handleExtensionForm.resetFields();
+      fetchExtensionRequests();
+      fetchBookings();
+    } catch {}
+  };
+
+  const handleEndVisitorAccess = async (request: MeetingExtensionRequest) => {
+    try {
+      await api.patch(`/meeting-bookings/${request.bookingId}`, { status: 'completed' });
+      message.success('访客权限已结束');
+      fetchExtensionRequests();
+      fetchBookings();
+      fetchRooms();
+    } catch {}
+  };
+
   const handleConflictAlert = async (alertId: number) => {
     try {
       await api.patch(`/alerts/${alertId}/handle`, { handledBy: '会议室管理员' });
@@ -173,6 +270,99 @@ function MeetingAdminPage() {
   };
 
   const unhandledConflicts = conflictAlerts.filter((a) => !a.handled);
+
+  const extensionRequestColumns = [
+    { title: '访客姓名', dataIndex: 'visitorName', key: 'visitorName' },
+    {
+      title: '原结束时间',
+      dataIndex: 'originalEndTime',
+      key: 'originalEndTime',
+      render: (val: string) => val ? dayjs(val).format('MM-DD HH:mm') : '-',
+    },
+    {
+      title: '申请延时至',
+      dataIndex: 'requestedEndTime',
+      key: 'requestedEndTime',
+      render: (val: string) => val ? dayjs(val).format('MM-DD HH:mm') : '-',
+    },
+    {
+      title: '冲突',
+      dataIndex: 'hasConflict',
+      key: 'hasConflict',
+      render: (val: boolean) =>
+        val ? <Tag color="red">有冲突</Tag> : <Tag color="green">无冲突</Tag>,
+    },
+    {
+      title: '建议会议室',
+      dataIndex: 'suggestedRoomName',
+      key: 'suggestedRoomName',
+      render: (val: string | null) => val || '-',
+    },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      key: 'status',
+      render: (status: string) => {
+        const colorMap: Record<string, string> = { pending: 'blue', approved: 'green', rejected: 'red' };
+        const labelMap: Record<string, string> = { pending: '待审批', approved: '已批准', rejected: '已拒绝' };
+        return <Tag color={colorMap[status] || 'default'}>{labelMap[status] || status}</Tag>;
+      },
+    },
+    {
+      title: '操作',
+      key: 'action',
+      render: (_: any, record: MeetingExtensionRequest) => (
+        <Space>
+          {record.hasConflict && record.suggestedRoomId && (
+            <>
+              <Button
+                size="small"
+                type="primary"
+                onClick={() => handleApproveExtension(record, true, record.suggestedRoomId!)}
+              >
+                换会议室批准
+              </Button>
+              <Button
+                size="small"
+                danger
+                onClick={() => handleEndVisitorAccess(record)}
+              >
+                结束访客权限
+              </Button>
+            </>
+          )}
+          {record.hasConflict && !record.suggestedRoomId && (
+            <Button
+              size="small"
+              danger
+              onClick={() => handleEndVisitorAccess(record)}
+            >
+              结束访客权限
+            </Button>
+          )}
+          {!record.hasConflict && (
+            <Button
+              size="small"
+              type="primary"
+              onClick={() => handleApproveExtension(record, false)}
+            >
+              批准
+            </Button>
+          )}
+          <Button
+            size="small"
+            danger
+            onClick={() => {
+              setSelectedExtensionRequest(record);
+              setHandleExtensionModalOpen(true);
+            }}
+          >
+            拒绝
+          </Button>
+        </Space>
+      ),
+    },
+  ];
 
   const bookingColumns = [
     {
@@ -236,7 +426,7 @@ function MeetingAdminPage() {
             <Button
               size="small"
               icon={<ClockCircleOutlined />}
-              onClick={() => openExtendModal(record)}
+              onClick={() => openRequestExtensionModal(record)}
             >
               延长
             </Button>
@@ -321,6 +511,34 @@ function MeetingAdminPage() {
               </Col>
             ))}
           </Row>
+        )}
+      </Card>
+
+      <Card
+        title={
+          <Space>
+            <ClockCircleOutlined />
+            会议延时审批
+            {extensionRequests.length > 0 && (
+              <Badge count={extensionRequests.length} style={{ marginLeft: 8 }} />
+            )}
+          </Space>
+        }
+        size="small"
+      >
+        {extensionRequests.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 24, color: '#999' }}>
+            暂无待审批的延时申请
+          </div>
+        ) : (
+          <Table
+            rowKey="id"
+            columns={extensionRequestColumns}
+            dataSource={extensionRequests}
+            loading={extensionRequestsLoading}
+            pagination={false}
+            size="small"
+          />
         )}
       </Card>
 
@@ -436,6 +654,53 @@ function MeetingAdminPage() {
         <Form form={extendForm} layout="vertical" onFinish={handleExtendBooking}>
           <Form.Item name="newEndTime" label="新结束时间" rules={[{ required: true, message: '请选择新的结束时间' }]}>
             <DatePicker showTime style={{ width: '100%' }} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="申请延时"
+        open={requestExtensionModalOpen}
+        onCancel={() => {
+          setRequestExtensionModalOpen(false);
+          setExtendingBooking(null);
+          requestExtensionForm.resetFields();
+        }}
+        onOk={() => requestExtensionForm.submit()}
+      >
+        {extendingBooking && (
+          <div style={{ marginBottom: 16, color: '#666' }}>
+            当前预约: {getRoomName(extendingBooking.meetingRoomId)}，结束时间: {dayjs(extendingBooking.endTime).format('YYYY-MM-DD HH:mm')}
+          </div>
+        )}
+        <Form form={requestExtensionForm} layout="vertical" onFinish={handleRequestExtension}>
+          <Form.Item name="newEndTime" label="新结束时间" rules={[{ required: true, message: '请选择新的结束时间' }]}>
+            <DatePicker showTime style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item label="申请人">
+            <Input value="会议室管理员" disabled />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="拒绝延时申请"
+        open={handleExtensionModalOpen}
+        onCancel={() => {
+          setHandleExtensionModalOpen(false);
+          setSelectedExtensionRequest(null);
+          handleExtensionForm.resetFields();
+        }}
+        onOk={() => handleExtensionForm.submit()}
+      >
+        {selectedExtensionRequest && (
+          <div style={{ marginBottom: 16, color: '#666' }}>
+            访客: {selectedExtensionRequest.visitorName}，申请延时至: {dayjs(selectedExtensionRequest.requestedEndTime).format('YYYY-MM-DD HH:mm')}
+          </div>
+        )}
+        <Form form={handleExtensionForm} layout="vertical" onFinish={handleRejectExtension}>
+          <Form.Item name="rejectedReason" label="拒绝原因" rules={[{ required: true, message: '请输入拒绝原因' }]}>
+            <TextArea rows={3} placeholder="请输入拒绝原因" />
           </Form.Item>
         </Form>
       </Modal>

@@ -1,5 +1,5 @@
 import { IsString, IsNotEmpty, IsOptional, IsNumber, IsBoolean, IsDateString, IsEnum } from 'class-validator';
-import { MeetingRoomStatus, MeetingBookingStatus } from '../common/enums';
+import { MeetingRoomStatus, MeetingBookingStatus, MeetingExtensionStatus } from '../common/enums';
 
 export class CreateMeetingRoomDto {
   @IsString()
@@ -95,4 +95,42 @@ export class UpdateMeetingBookingDto {
 export class ExtendBookingDto {
   @IsDateString()
   newEndTime: string;
+
+  @IsString()
+  @IsOptional()
+  requestedBy?: string;
+}
+
+export class HandleExtensionRequestDto {
+  @IsEnum(MeetingExtensionStatus)
+  status: MeetingExtensionStatus;
+
+  @IsString()
+  @IsNotEmpty()
+  handledBy: string;
+
+  @IsString()
+  @IsOptional()
+  rejectedReason?: string;
+
+  @IsNumber()
+  @IsOptional()
+  suggestedRoomId?: number;
+
+  @IsBoolean()
+  @IsOptional()
+  roomChanged?: boolean;
+}
+
+export class ConfirmVisitorStayDto {
+  @IsBoolean()
+  confirmed: boolean;
+
+  @IsString()
+  @IsNotEmpty()
+  confirmedBy: string;
+
+  @IsString()
+  @IsOptional()
+  note?: string;
 }

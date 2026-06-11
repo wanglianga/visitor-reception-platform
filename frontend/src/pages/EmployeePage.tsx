@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Card, Form, Input, Switch, DatePicker, Button, Table, Tag, Space, Modal, Descriptions, Alert, message } from 'antd';
-import { PlusOutlined, CheckOutlined, CloseOutlined, TeamOutlined } from '@ant-design/icons';
+import { PlusOutlined, CheckOutlined, CloseOutlined, TeamOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import api from '../api/index';
-import type { Appointment, CreateAppointmentParams, Companion } from '../types/index';
+import type { Appointment, CreateAppointmentParams, Companion, MeetingExtensionRequest, ConfirmVisitorStayParams } from '../types/index';
 
 const { TextArea } = Input;
 
@@ -34,7 +34,12 @@ function EmployeePage() {
   const [companionsLoading, setCompanionsLoading] = useState(false);
   const [companionDetailOpen, setCompanionDetailOpen] = useState(false);
   const [selectedCompanion, setSelectedCompanion] = useState<Companion | null>(null);
+  const [pendingExtensions, setPendingExtensions] = useState<MeetingExtensionRequest[]>([]);
+  const [extensionsLoading, setExtensionsLoading] = useState(false);
+  const [confirmStayModalOpen, setConfirmStayModalOpen] = useState(false);
+  const [selectedExtension, setSelectedExtension] = useState<MeetingExtensionRequest | null>(null);
   const [form] = Form.useForm();
+  const [confirmStayForm] = Form.useForm();
 
   const fetchAppointments = useCallback(async () => {
     setLoading(true);
@@ -59,10 +64,23 @@ function EmployeePage() {
     }
   }, []);
 
+  const fetchPendingExtensions = useCallback(async () => {
+    setExtensionsLoading(true);
+    try {
+      const res: any = await api.get('/meeting-extension-requests', { params: { status: 'pending' } });
+      setPendingExtensions(Array.isArray(res) ? res : []);
+    } catch {
+      setPendingExtensions([]);
+    } finally {
+      setExtensionsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchAppointments();
     fetchPendingCompanions();
-  }, [fetchAppointments, fetchPendingCompanions]);
+    fetchPendingExtensions();
+  }, [fetchAppointments, fetchPendingCompanions, fetchPendingExtensions]);
 
   const handleSubmit = async (values: any) => {
     const params: CreateAppointmentParams = {
@@ -123,6 +141,42 @@ function EmployeePage() {
   const handleViewCompanionDetail = (companion: Companion) => {
     setSelectedCompanion(companion);
     setCompanionDetailOpen(true);
+  };
+
+  const handleConfirmVisitorStay = async (extension: MeetingExtensionRequest) => {
+    try {
+      const params: ConfirmVisitorStayParams = {
+        confirmed: true,
+        confirmedBy: '李明',
+      };
+      await api.post(`/meeting-extension-requests/${extension.id}/confirm-stay`, params);
+      message.success(`已确认访客 ${extension.visitorName} 继续停留`);
+      setConfirmStayModalOpen(false);
+      setSelectedExtension(null);
+      confirmStayForm.resetFields();
+      fetchPendingExtensions();
+    } catch {}
+  };
+
+  const handleRejectVisitorStay = async (extension: MeetingExtensionRequest, reason: string) => {
+    try {
+      const params: ConfirmVisitorStayParams = {
+        confirmed: false,
+        confirmedBy: '李明',
+        note: reason,
+      };
+      await api.post(`/meeting-extension-requests/${extension.id}/confirm-stay`, params);
+      message.success(`已拒绝访客 ${extension.visitorName} 继续停留`);
+      setConfirmStayModalOpen(false);
+      setSelectedExtension(null);
+      confirmStayForm.resetFields();
+      fetchPendingExtensions();
+    } catch {}
+  };
+
+  const handleOpenConfirmStay = (extension: MeetingExtensionRequest) => {
+    setSelectedExtension(extension);
+    setConfirmStayModalOpen(true);
   };
 
   const columns = [
@@ -245,6 +299,68 @@ function EmployeePage() {
     },
   ];
 
+  const extensionColumns = [
+    { title: '访客姓名', dataIndex: 'visitorName', key: 'visitorName' },
+    {
+      title: '原结束时间',
+      dataIndex: 'originalEndTime',
+      key: 'originalEndTime',
+      render: (val: string) => val ? dayjs(val).format('YYYY-MM-DD HH:mm') : '-',
+    },
+    {
+      title: '申请结束时间',
+      dataIndex: 'requestedEndTime',
+      key: 'requestedEndTime',
+      render: (val: string) => val ? dayjs(val).format('YYYY-MM-DD HH:mm') : '-',
+    },
+    {
+      title: '冲突',
+      dataIndex: 'hasConflict',
+      key: 'hasConflict',
+      render: (val: boolean) =>
+        val ? <Tag color="red">有冲突</Tag> : <Tag color="green">无冲突</Tag>,
+    },
+    {
+      title: '建议换至',
+      dataIndex: 'suggestedRoomName',
+      key: 'suggestedRoomName',
+      render: (val: string | null) => val || '-',
+    },
+    {
+      title: '申请人',
+      dataIndex: 'requestedBy',
+      key: 'requestedBy',
+      render: (val: string | null) => val || '-',
+    },
+    {
+      title: '操作',
+      key: 'action',
+      render: (_: any, record: MeetingExtensionRequest) => (
+        <Space size="small">
+          <Button
+            type="primary"
+            size="small"
+            style={{ background: '#52c41a', borderColor: '#52c41a' }}
+            icon={<CheckOutlined />}
+            onClick={() => handleConfirmVisitorStay(record)}
+          >
+            确认继续停留
+          </Button>
+          <Button
+            danger
+            size="small"
+            icon={<CloseOutlined />}
+            onClick={() => handleOpenConfirmStay(record)}
+          >
+            拒绝停留
+          </Button>
+        </Space>
+      ),
+    },
+  ];
+
+  const unconfirmedExtensions = pendingExtensions.filter((e) => !e.employeeConfirmed);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <Card title="提交预约" size="small">
@@ -323,6 +439,32 @@ function EmployeePage() {
         )}
       </Card>
 
+      <Card
+        title={
+          <Space>
+            <ClockCircleOutlined />
+            会议延时确认
+            {unconfirmedExtensions.length > 0 && <Tag color="orange">{unconfirmedExtensions.length}</Tag>}
+          </Space>
+        }
+        size="small"
+      >
+        {unconfirmedExtensions.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 24, color: '#999' }}>
+            暂无待确认的会议延时请求
+          </div>
+        ) : (
+          <Table
+            rowKey="id"
+            columns={extensionColumns}
+            dataSource={unconfirmedExtensions}
+            loading={extensionsLoading}
+            pagination={{ pageSize: 10 }}
+            size="small"
+          />
+        )}
+      </Card>
+
       <Modal
         title="随行人员详情"
         open={companionDetailOpen}
@@ -382,6 +524,81 @@ function EmployeePage() {
             <div style={{ marginTop: 12, color: '#666', fontSize: 13 }}>
               确认后，该随行人员将获得申请楼层的通行权限；拒绝后，其门禁权限将被撤销。
             </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        title="确认访客继续停留"
+        open={confirmStayModalOpen}
+        onCancel={() => {
+          setConfirmStayModalOpen(false);
+          setSelectedExtension(null);
+          confirmStayForm.resetFields();
+        }}
+        footer={[
+          <Button
+            key="reject"
+            danger
+            icon={<CloseOutlined />}
+            onClick={() => {
+              confirmStayForm.validateFields().then((values) => {
+                if (selectedExtension) {
+                  handleRejectVisitorStay(selectedExtension, values.reason);
+                }
+              });
+            }}
+          >
+            拒绝
+          </Button>,
+          <Button
+            key="confirm"
+            type="primary"
+            style={{ background: '#52c41a', borderColor: '#52c41a' }}
+            icon={<CheckOutlined />}
+            onClick={() => {
+              if (selectedExtension) {
+                handleConfirmVisitorStay(selectedExtension);
+              }
+            }}
+          >
+            确认继续停留
+          </Button>,
+        ]}
+        width={520}
+      >
+        {selectedExtension && (
+          <div>
+            {selectedExtension.hasConflict && (
+              <Alert
+                message="时间冲突警告"
+                description={
+                  <span>
+                    该延时请求与后续会议存在时间冲突
+                    {selectedExtension.suggestedRoomName && (
+                      <>，建议更换至 <strong>{selectedExtension.suggestedRoomName}</strong></>
+                    )}
+                  </span>
+                }
+                type="warning"
+                showIcon
+                style={{ marginBottom: 16 }}
+              />
+            )}
+            <Descriptions column={1} bordered size="small">
+              <Descriptions.Item label="访客姓名">{selectedExtension.visitorName}</Descriptions.Item>
+              <Descriptions.Item label="当前结束时间">
+                {dayjs(selectedExtension.originalEndTime).format('YYYY-MM-DD HH:mm')}
+              </Descriptions.Item>
+              <Descriptions.Item label="申请结束时间">
+                {dayjs(selectedExtension.requestedEndTime).format('YYYY-MM-DD HH:mm')}
+              </Descriptions.Item>
+            </Descriptions>
+            <Form form={confirmStayForm} layout="vertical" style={{ marginTop: 16 }}>
+              <Form.Item name="reason" label="拒绝原因（拒绝时必填）" rules={[{ required: false }]}>
+                <TextArea rows={3} placeholder="请输入拒绝原因" />
+              </Form.Item>
+            </Form>
           </div>
         )}
       </Modal>

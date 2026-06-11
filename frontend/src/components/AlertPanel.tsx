@@ -16,6 +16,9 @@ const typeConfig: Record<string, { color: string; label: string }> = {
   meeting_conflict: { color: 'red', label: '预约冲突' },
   overstay: { color: 'orange', label: '超时滞留' },
   companion_pending: { color: 'cyan', label: '随行待确认' },
+  sensitive_access_violation: { color: 'red', label: '安防异常' },
+  sensitive_area_pending: { color: 'purple', label: '敏感区域待审批' },
+  meeting_extension_request: { color: 'blue', label: '会议延时申请' },
 };
 
 const severityConfig: Record<string, { color: 'blue' | 'green' | 'orange' | 'red'; label: string }> = {
